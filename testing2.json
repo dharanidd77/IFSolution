@@ -1,0 +1,717 @@
+{
+  "Parameters": {
+    "envPrefix": {
+      "Description": "Environment name prefix.",
+      "Type": "String",
+      "Default": "Test"
+    },
+    "vpcCidr": {
+      "Description": "VPC CIDR block.",
+      "Type": "String",
+      "Default": "10.4.0.0/16",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+    "publicSubnet1Cidr": {
+      "Description": "Public subnet 1 CIDR block.",
+      "Type": "String",
+      "Default": "10.4.0.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+    },
+    "privateSubnet1Cidr": {
+      "Description": "Private subnet 1 CIDR block.",
+      "Type": "String",
+      "Default": "10.4.1.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+    },
+    "publicSubnet2Cidr": {
+      "Description": "Public subnet 2 CIDR block.",
+      "Type": "String",
+      "Default": "10.4.10.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+    },
+    "privateSubnet2Cidr": {
+      "Description": "Private subnet 2 CIDR block.",
+      "Type": "String",
+      "Default": "10.4.11.0/24",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+    },
+    "subnet1AZ": {
+      "Description": "Subnet 1 availability zone.",
+      "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+    "subnet2AZ": {
+      "Description": "Subnet 2 availability zone.",
+      "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+    "DBName" : {
+      "Default": "wordpressdb",
+      "Description" : "The WordPress database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBUser" : {
+      "NoEcho": "true",
+      "Description" : "The WordPress database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBPassword" : {
+      "NoEcho": "true",
+      "Description" : "The WordPress database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "DBRootPassword" : {
+      "NoEcho": "true",
+      "Description" : "MySQL root password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "natInstanceType": {
+      "Description": "Amazon EC2 instance type for the NAT instance. This instance will be put on public subnet 1",
+      "Type": "String",
+      "Default": "t2.micro"
+    },
+    "natSshAccessCidr": {
+      "Description": "IP CIDR from where you could SSH into NAT instance",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+    },
+    "natKeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to NAT instances.",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription" : "Must be the name of an existing EC2 KeyPair",
+      "Default" : "key"
+    },
+    "OperatorEmail": {
+      "Description": "Email address to notify if there are any scaling operations",
+      "Type": "String",
+      "Default": "ddkavi989707@gmail.com",
+      "ConstraintDescription": "must be a valid email address."
+    }
+  },
+  "Mappings": {
+    "AWSInstanceType2Arch" : {
+      "t2.micro"    : { "Arch" : "HVM64"  }
+    },
+    "Region2Examples" : {
+      "ap-south-1"     : { "Examples" : "https://s3-ap-south-1.amazonaws.com/cloudformation-examples-ap-south-1" }
+    },  
+    "AWSInstanceType2NATArch" : {
+      "t2.micro"    : { "Arch" : "NATHVM64"  }
+    },
+    "AWSRegionArch2AMI" : {
+      "ap-south-1"       : {"HVM64" : "ami-08e0ca9924195beba"}
+    }
+  },
+  "Resources": {
+    "vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {"Ref": "vpcCidr"},
+        "InstanceTenancy": "default",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "VPC"]]}
+          }
+        ]
+      }
+    },
+    "NotificationTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "Subscription": [ { "Endpoint": { "Ref": "OperatorEmail" }, "Protocol": "email" } ]
+      }
+    },
+
+    "WebServerGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+        "AvailabilityZones" : { "Fn::GetAZs" : ""},
+        "LaunchConfigurationName" : { "Ref" : "LaunchConfig" },
+        "MinSize" : "1",
+        "MaxSize" : "3",
+        "LoadBalancerNames" : [ { "Ref" : "ElasticLoadBalancer" } ],
+        "NotificationConfiguration" : {
+          "TopicARN" : { "Ref" : "NotificationTopic" },
+          "NotificationTypes" : [ "autoscaling:EC2_INSTANCE_LAUNCH",
+                                  "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+                                  "autoscaling:EC2_INSTANCE_TERMINATE",
+                                  "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"]
+        }
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M",
+          "Count"   : "1"
+        }
+      },
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "MinInstancesInService": "1",
+          "MaxBatchSize": "1",
+          "PauseTime" : "PT15M",
+          "WaitOnResourceSignals": "true"
+        }
+      }
+    },
+
+    "LaunchConfig" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "DependsOn" : ["vpc"],
+      "Metadata" : {
+        "Comment" : "Install a simple application",
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "wordpress_install" : ["install_php"]
+          },
+          "install_php": {
+            "packages" : {
+              "yum" : {
+                "httpd" : []
+              }
+            },
+            "files" : {
+              "/var/www/html/index.html" : {
+                "content" : { "Fn::Join" : ["\n", [
+                  "<img src=\"", {"Fn::FindInMap" : ["Region2Examples", {"Ref" : "AWS::Region"}, "Examples"]}, "/cloudformation_graphic.png\" alt=\"AWS CloudFormation Logo\"/>",
+                  "<h1>Congratulations, you have successfully launched the AWS CloudFormation sample.</h1>"
+                ]]},
+                "mode"    : "000644",
+                "owner"   : "root",
+                "group"   : "root"
+              },
+              "/etc/cfn/cfn-hup.conf" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[main]\n",
+                  "stack=", { "Ref" : "AWS::StackId" }, "\n",
+                  "region=", { "Ref" : "AWS::Region" }, "\n"
+                ]]},
+                "mode"    : "000400",
+                "owner"   : "root",
+                "group"   : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
+                "content": { "Fn::Join" : ["", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                  "         --stack ", { "Ref" : "AWS::StackName" },
+                  "         --resource LaunchConfig ",
+                  "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                  "runas=root\n"
+                ]]}
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "httpd"    : { "enabled" : "true", "ensureRunning" : "true" },
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          }
+        }        
+      },
+      "Properties" : {
+        "KeyName" : { "Ref" : "natKeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+                                          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "natInstanceType" }, "Arch" ] } ] },
+        "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
+        "InstanceType" : { "Ref" : "natInstanceType" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+             "#!/bin/bash -xe\n",
+             "yum update -y aws-cfn-bootstrap\n",
+
+             "/opt/aws/bin/cfn-init -v ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource LaunchConfig ",
+             "         --configsets wordpress_install",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+             "/opt/aws/bin/cfn-signal -e $? ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource WebServerGroup ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      }
+    },
+
+    "WebServerScaleUpPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "WebServerGroup" },
+        "Cooldown" : "60",
+        "ScalingAdjustment" : "2"
+      }
+    },
+    "WebServerScaleDownPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "WebServerGroup" },
+        "Cooldown" : "60",
+        "ScalingAdjustment" : "-2"
+      }
+    },
+
+    "CPUAlarmHigh": {
+     "Type": "AWS::CloudWatch::Alarm",
+     "Properties": {
+        "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "300",
+        "EvaluationPeriods": "2",
+        "Threshold": "75",
+        "AlarmActions": [ { "Ref": "WebServerScaleUpPolicy" } ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": { "Ref": "WebServerGroup" }
+          }
+        ],
+        "ComparisonOperator": "GreaterThanThreshold"
+      }
+    },
+    "CPUAlarmLow": {
+     "Type": "AWS::CloudWatch::Alarm",
+     "Properties": {
+        "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "300",
+        "EvaluationPeriods": "2",
+        "Threshold": "70",
+        "AlarmActions": [ { "Ref": "WebServerScaleDownPolicy" } ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": { "Ref": "WebServerGroup" }
+          }
+        ],
+        "ComparisonOperator": "LessThanThreshold"
+      }
+    },
+
+    "ElasticLoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "DependsOn" : ["vpc"],
+      "Properties" : {
+        "AvailabilityZones" : { "Fn::GetAZs" : "" },
+        "CrossZone" : "true",
+        "Listeners" : [ {
+          "LoadBalancerPort" : "80",
+          "InstancePort" : "80",
+          "Protocol" : "HTTP"
+        } ],
+        "HealthCheck" : {
+          "Target" : "HTTP:80/",
+          "HealthyThreshold" : "3",
+          "UnhealthyThreshold" : "5",
+          "Interval" : "30",
+          "Timeout" : "5"
+        }
+      }
+    },
+
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable SSH access and HTTP from the load balancer only",
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : { "Ref" : "natSshAccessCidr"}
+        },
+        {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "SourceSecurityGroupOwnerId" : {"Fn::GetAtt" : ["ElasticLoadBalancer", "SourceSecurityGroup.OwnerAlias"]},
+          "SourceSecurityGroupName" : {"Fn::GetAtt" : ["ElasticLoadBalancer", "SourceSecurityGroup.GroupName"]}
+        } ]
+      }
+    },
+    "publicSubnet1":  {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": {"Ref": "publicSubnet1Cidr"},
+        "AvailabilityZone": {"Ref" : "subnet1AZ"},
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "Subnet-Public-1"]]}
+          }
+        ]
+      }
+    },
+    "privateSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": {"Ref": "privateSubnet1Cidr"},
+        "AvailabilityZone": {"Ref" : "subnet1AZ"},
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "Subnet-Private-1"]]}
+          }
+        ]
+      }
+    },
+    "publicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": {"Ref": "publicSubnet2Cidr"},
+        "AvailabilityZone": {"Ref" : "subnet2AZ"},
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "Subnet-Public-2"]]}
+          }
+        ]
+      }
+    },
+    "privateSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "CidrBlock": {"Ref": "privateSubnet2Cidr"},
+        "AvailabilityZone": {"Ref" : "subnet2AZ"},
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "Subnet-Private-2"]]}
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "DependsOn": ["vpc"],
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "InternetGateway"]]}
+          }
+        ]
+      }
+    },
+    "attachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": ["vpc", "InternetGateway"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"},
+        "InternetGatewayId": {"Ref": "InternetGateway"}
+      }
+    },
+    "rtbPublic": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "RTB-Public"]]}
+          }
+        ]
+      }
+    },
+    "routePublic": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": ["rtbPublic"],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "GatewayId": {"Ref": "InternetGateway"}
+      },
+      "DependsOn": ["attachGateway"]
+    },
+    "subnetRouteTableAssociationPublic1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "publicSubnet1"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "SubnetId": {"Ref": "publicSubnet1"}
+      }
+    },
+    "subnetRouteTableAssociationPublic2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "publicSubnet2"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPublic"},
+        "SubnetId": {"Ref": "publicSubnet2"}
+      }
+    },
+    "rtbPrivate": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": ["vpc"],
+      "Properties": {
+        "VpcId": {"Ref": "vpc"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "RTB-Private"]]}
+          }
+        ]
+      }
+    },
+    "subnetRouteTableAssociationPrivate1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "privateSubnet1"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPrivate"},
+        "SubnetId": {"Ref": "privateSubnet1"}
+      }
+    },
+    "subnetRouteTableAssociationPrivate2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": ["rtbPublic", "privateSubnet2"],
+      "Properties": {
+        "RouteTableId": {"Ref": "rtbPrivate"},
+        "SubnetId": {"Ref": "privateSubnet2"}
+      }
+    },
+    "natEc2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn": ["vpc", "attachGateway", "publicSubnet1", "sgNAT"],
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "wordpress_install" : ["install_cfn", "install_wordpress", "configure_wordpress" ]
+          },
+          "install_cfn" : {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[main]\n",
+                  "stack=", { "Ref": "AWS::StackId" }, "\n",
+                  "region=", { "Ref": "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.WebServer.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                          "         --stack ", { "Ref" : "AWS::StackName" },
+                          "         --resource WebServer ",
+                          "         --configsets wordpress_install ",
+                          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]},          
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"] }
+              }
+            }
+          },
+
+          "install_wordpress" : {
+            "packages" : {
+              "yum" : {
+                "php73"          : [],
+                "php73-mysqlnd"  : [],
+                "mysql57"        : [],
+                "mysql57-server" : [],
+                "mysql57-devel"  : [],
+                "mysql57-libs"   : [],
+                "httpd24"        : []
+              }
+            },
+            "sources" : {
+              "/var/www/html" : "http://wordpress.org/latest.tar.gz"
+            },
+            "files" : {
+              "/tmp/setup.mysql" : {
+                "content" : { "Fn::Join" : ["", [
+                  "CREATE DATABASE ", { "Ref" : "DBName" }, ";\n",
+                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBPassword" }, "';\n",
+                  "GRANT ALL ON ", { "Ref" : "DBName" }, ".* TO '", { "Ref" : "DBUser" }, "'@'localhost';\n",
+                  "FLUSH PRIVILEGES;\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+
+              "/tmp/create-wp-config" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "#!/bin/bash -xe\n",
+                  "cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php\n",
+                  "sed -i \"s/'database_name_here'/'",{ "Ref" : "DBName" }, "'/g\" wp-config.php\n",
+                  "sed -i \"s/'username_here'/'",{ "Ref" : "DBUser" }, "'/g\" wp-config.php\n",
+                  "sed -i \"s/'password_here'/'",{ "Ref" : "DBPassword" }, "'/g\" wp-config.php\n"
+                ]]},
+                "mode" : "000500",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
+                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            }
+          },
+
+          "configure_wordpress" : {
+            "commands" : {
+              "01_set_mysql_root_password" : {
+                "command" : { "Fn::Join" : ["", ["mysqladmin -u root password '", { "Ref" : "DBRootPassword" }, "'"]]},
+                "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
+              },
+              "02_create_database" : {
+                "command" : { "Fn::Join" : ["", ["mysql -u root --password='", { "Ref" : "DBRootPassword" }, "' < /tmp/setup.mysql"]]},
+                "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
+              },
+              "03_configure_wordpress" : {
+                "command" : "/tmp/create-wp-config",
+                "cwd" : "/var/www/html/wordpress"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "DisableApiTermination": "false",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "InstanceType": {"Ref": "natInstanceType"},
+        "ImageId": {"Fn::FindInMap": ["AWSRegionArch2AMI", {"Ref": "AWS::Region"}, "HVM64"]},
+        "KeyName": {"Ref": "natKeyName"},
+        "Monitoring": "false",
+        "SourceDestCheck": "false",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "NAT"]]}
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeleteOnTermination": "true",
+            "Description": "Primary network interface",
+            "DeviceIndex": 0,
+            "SubnetId": {"Ref": "publicSubnet1"},
+            "GroupSet": [
+              {"Ref": "sgNAT"}
+            ],
+            "AssociatePublicIpAddress": "true"
+          }
+        ]
+      }
+    },
+    "sgNAT": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "DependsOn": ["vpc", "attachGateway"],
+      "Properties": {
+        "GroupDescription": "Security group for NAT instances",
+        "VpcId": {"Ref": "vpc"},
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "0",
+            "ToPort": "1024",
+            "CidrIp": {"Ref": "privateSubnet1Cidr"}
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "0",
+            "ToPort": "1024",
+            "CidrIp": {"Ref": "privateSubnet1Cidr"}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "0",
+            "ToPort": "1024",
+            "CidrIp": {"Ref": "privateSubnet2Cidr"}
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "0",
+            "ToPort": "1024",
+            "CidrIp": {"Ref": "privateSubnet2Cidr"}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {"Ref": "natSshAccessCidr"}
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+            {
+              "Key": "Name",
+              "Value": {"Fn::Join" : ["-", [{"Ref" : "envPrefix"}, "SG-NAT"]]}
+            }
+          ]
+        }
+    },
+    "routePrivate": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {"Ref": "rtbPrivate"},
+        "InstanceId": {"Ref": "natEc2Instance"}
+      }
+    }
+  },
+  "Outputs" : {
+    "WebsiteURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "natEc2Instance", "PublicDnsName" ]}, "/wordpress" ]]},
+      "Description" : "WordPress Website"
+    }
+  }
+}
